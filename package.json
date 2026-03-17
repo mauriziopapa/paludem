@@ -1,0 +1,11 @@
+{
+  "name": "paludem",
+  "version": "1.0.0",
+  "description": "PLAUD API Dashboard",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
