@@ -11,6 +11,8 @@
     "node": ">=18"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "docx": "^9.6.1",
+    "express": "^4.21.2",
+    "file-saver": "^2.0.5"
   }
 }

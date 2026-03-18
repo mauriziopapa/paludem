@@ -10,6 +10,7 @@
 const express = require('express');
 const router = express.Router();
 const { buildFullTranscript } = require('../services/plaudAggregator');
+const { exportBADocx } = require('../services/docxExporter');
 
 // ── Proxy: forward auth header to PLAUD API ──
 async function plaudFetch(url, authHeader) {
@@ -148,6 +149,34 @@ router.get('/:fileId/download-urls', async (req, res) => {
     res.json({ urls });
   } catch (err) {
     res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/plaud/export-docx
+ * Generate a .docx file from a BA document object.
+ * Body: { baDocument: { title, executiveSummary, ... } }
+ * Returns: .docx binary
+ */
+router.post('/export-docx', async (req, res) => {
+  try {
+    const { baDocument } = req.body;
+    if (!baDocument) {
+      return res.status(400).json({ error: 'Missing baDocument in request body' });
+    }
+
+    const buffer = await exportBADocx(baDocument);
+
+    const filename = (baDocument.title || 'BA_Document').replace(/[^a-zA-Z0-9_\-\s]/g, '').substring(0, 80);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${filename}_BA.docx"`,
+      'Content-Length': buffer.length,
+    });
+    res.send(buffer);
+  } catch (err) {
+    console.error('[export-docx]', err.message);
+    res.status(500).json({ error: `DOCX generation failed: ${err.message}` });
   }
 });
 
