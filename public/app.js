@@ -290,11 +290,13 @@ async function openContent(fileId, fileName) {
 
 function updateModalTabs(data) {
   const tabs = document.getElementById('modalTabs');
+  const meta = data?.meta || data?.metadata?.pipeline;
   const items = [
     { id: 'transcript', label: 'Trascrizione', badge: data?.transcript ? data.transcript.stats.segmentsCount : null },
     { id: 'summary', label: 'Sommario', badge: data?.summary ? 'AI' : null },
     { id: 'outline', label: 'Outline', badge: data?.outline?.sections?.length || null },
     { id: 'notes', label: 'Note', badge: data?.notes?.length || null },
+    { id: 'pipeline', label: 'Pipeline', badge: meta ? `${meta.pipelineMs}ms` : null },
     { id: 'raw', label: 'Raw', badge: null },
   ];
 
@@ -371,6 +373,7 @@ function renderActiveTab() {
     case 'summary':    renderSummary(container, data); break;
     case 'outline':    renderOutline(container, data); break;
     case 'notes':      renderNotes(container, data); break;
+    case 'pipeline':   renderPipeline(container, data); break;
     case 'raw':        renderRaw(container, data); break;
   }
 }
@@ -561,15 +564,80 @@ function renderNotes(container, data) {
 }
 
 // ══════════════════════════════════════
-//  RENDER: Raw
+//  RENDER: Pipeline (debug + metrics)
 // ══════════════════════════════════════
 
-function renderRaw(container, data) {
+function renderPipeline(container, data) {
   let html = '<div class="modal-body-inner">';
+
+  // Pipeline metrics
+  const meta = data.meta || data.metadata?.pipeline;
+  if (meta) {
+    html += '<h4 style="font-size:0.85rem;margin-bottom:10px">Pipeline Metrics</h4>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">';
+    html += `<span class="status status-info">${meta.totalContents} totali</span>`;
+    html += `<span class="status status-ok">${meta.downloadedContents || meta.processedContents || 0} scaricati</span>`;
+    if (meta.failedContents > 0) html += `<span class="status status-err">${meta.failedContents} falliti</span>`;
+    if (meta.duplicatesRemoved > 0) html += `<span class="status status-warn">${meta.duplicatesRemoved} duplicati rimossi</span>`;
+    html += `<span class="status status-info">${meta.pipelineMs}ms</span>`;
+    html += '</div>';
+
+    // Groups breakdown
+    if (meta.groups) {
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">';
+      for (const [cat, count] of Object.entries(meta.groups)) {
+        if (count > 0) {
+          html += `<div style="padding:6px 12px;background:var(--surface-alt);border-radius:var(--radius);font-size:0.82rem">
+            <strong>${cat}</strong>: ${count}
+          </div>`;
+        }
+      }
+      html += '</div>';
+    }
+  }
+
+  // Debug: all contents table
+  if (data.debug && data.debug.length > 0) {
+    html += '<h4 style="font-size:0.85rem;margin-bottom:8px">Content Items (all downloaded)</h4>';
+    html += '<div style="overflow-x:auto"><table><thead><tr>';
+    html += '<th>#</th><th>Category</th><th>data_type</th><th>Title</th><th>Tab</th><th>Format</th><th>Size</th><th>Time</th><th>Hash</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const item of data.debug) {
+      const catClass = item.category === 'transcript' ? 'status-info' :
+                       item.category === 'summary' ? 'status-ok' :
+                       item.category === 'outline' ? 'status-warn' :
+                       item.category === 'notes' ? 'status-info' : '';
+      html += `<tr>
+        <td>${item.originalIndex}</td>
+        <td><span class="status ${catClass}">${esc(item.category)}</span></td>
+        <td style="font-family:var(--font-mono);font-size:0.75rem">${esc(item.dataType)}</td>
+        <td>${esc(item.title)}</td>
+        <td>${esc(item.tab || '-')}</td>
+        <td>${esc(item.format)}</td>
+        <td>${formatSize(item.sizeBytes)}</td>
+        <td>${item.downloadMs}ms</td>
+        <td style="font-family:var(--font-mono);font-size:0.7rem">${esc(item.hash)}</td>
+      </tr>`;
+    }
+
+    html += '</tbody></table></div>';
+
+    // Content previews
+    html += '<h4 style="font-size:0.85rem;margin:16px 0 8px">Content Previews</h4>';
+    for (const item of data.debug) {
+      if (item.rawPreview) {
+        html += `<details style="margin-bottom:6px">
+          <summary style="cursor:pointer;font-size:0.78rem;color:var(--text-muted)">[${item.originalIndex}] ${esc(item.category)} — ${esc(item.title)}</summary>
+          <div class="summary-raw" style="margin-top:4px;font-size:0.78rem;max-height:150px;overflow-y:auto">${esc(item.rawPreview)}...</div>
+        </details>`;
+      }
+    }
+  }
 
   // Pipeline log
   if (data.log && data.log.length > 0) {
-    html += '<h4 style="font-size:0.85rem;margin-bottom:8px">Pipeline Log</h4>';
+    html += '<h4 style="font-size:0.85rem;margin:16px 0 8px">Pipeline Log</h4>';
     html += '<div class="pipeline-log">';
     for (const entry of data.log) {
       const cls = entry.level === 'ok' ? 'ok' : entry.level === 'error' ? 'error' : '';
@@ -578,18 +646,36 @@ function renderRaw(container, data) {
     html += '</div>';
   }
 
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ══════════════════════════════════════
+//  RENDER: Raw
+// ══════════════════════════════════════
+
+function renderRaw(container, data) {
+  let html = '<div class="modal-body-inner">';
+
   // Metadata
   if (data.metadata) {
-    html += '<h4 style="font-size:0.85rem;margin:16px 0 8px">Metadata</h4>';
+    html += '<h4 style="font-size:0.85rem;margin-bottom:8px">Metadata</h4>';
     html += `<div class="summary-raw">${esc(JSON.stringify(data.metadata, null, 2))}</div>`;
   }
 
   // Raw detail
   if (data.rawDetail) {
-    html += '<details style="margin-top:16px"><summary style="cursor:pointer;font-size:0.82rem;color:var(--text-muted)">Raw file detail JSON</summary>';
+    html += '<details style="margin-top:16px"><summary style="cursor:pointer;font-size:0.82rem;color:var(--text-muted)">Raw file detail JSON (from PLAUD API)</summary>';
     html += `<div class="summary-raw" style="margin-top:8px;max-height:400px;overflow-y:auto">${esc(JSON.stringify(data.rawDetail, null, 2))}</div>`;
     html += '</details>';
   }
+
+  // Full response JSON
+  html += '<details style="margin-top:16px"><summary style="cursor:pointer;font-size:0.82rem;color:var(--text-muted)">Full pipeline response JSON</summary>';
+  const exportable = { ...data };
+  delete exportable.rawDetail; // avoid double-nesting
+  html += `<div class="summary-raw" style="margin-top:8px;max-height:400px;overflow-y:auto">${esc(JSON.stringify(exportable, null, 2))}</div>`;
+  html += '</details>';
 
   html += '</div>';
   container.innerHTML = html;
@@ -603,17 +689,19 @@ function updateFooter() {
   const left = document.getElementById('modalFooterLeft');
   const data = state.currentData;
 
-  if (!data || !data.metadata) {
+  if (!data) {
     left.innerHTML = '';
     return;
   }
 
-  const m = data.metadata;
+  const m = data.metadata || {};
+  const meta = data.meta || m.pipeline || {};
   const parts = [];
   if (m.hasTranscript) parts.push('Transcript');
   if (m.hasSummary) parts.push('Summary');
   if (m.hasOutline) parts.push('Outline');
   if (m.notesCount > 0) parts.push(`${m.notesCount} Note`);
+  if (meta.pipelineMs) parts.push(`${meta.pipelineMs}ms`);
 
   left.innerHTML = `<span class="modal-stats">${parts.join(' · ') || 'Nessun contenuto'}</span>`;
 }
