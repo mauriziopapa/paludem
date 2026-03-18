@@ -20,6 +20,10 @@ const state = {
   speakerFilter: '',
   // BA Document
   baDocument: null,
+  // n8n AI Pipeline
+  n8nConfigured: false,
+  n8nJob: null,
+  n8nPolling: null,
   // Sorting
   sort: { field: 'date', direction: 'desc' },
 };
@@ -49,6 +53,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeModal();
   });
+
+  // Check n8n configuration
+  checkN8nConfig();
 });
 
 // ══════════════════════════════════════
@@ -262,6 +269,8 @@ async function openContent(fileId, fileName) {
   document.getElementById('modalTitle').textContent = fileName;
   state.currentData = null;
   state.baDocument = null;
+  state.n8nJob = null;
+  stopN8nPolling();
   state.activeTab = 'transcript';
   state.searchQuery = '';
   state.speakerFilter = '';
@@ -1144,6 +1153,10 @@ function deduplicateByText(arr, field) {
 
 function renderBATab(container, data) {
   if (!state.baDocument) {
+    const n8nStatus = state.n8nJob
+      ? renderN8nJobStatus(state.n8nJob)
+      : '';
+
     container.innerHTML = `<div class="modal-body-inner">
       <div class="ba-generate-prompt">
         <p>Genera il documento di Business Analysis dal contenuto del meeting.</p>
@@ -1151,9 +1164,25 @@ function renderBATab(container, data) {
           Il BA Generator analizza trascrizione, sommario, outline e note per estrarre:
           requisiti, job stories, rischi, azioni e KPI.
         </p>
-        <div class="btn-row" style="justify-content:center;margin-top:16px">
-          <button class="btn btn-primary" onclick="generateBA()">Genera BA Document</button>
+        <div class="ba-mode-selector">
+          <div class="ba-mode-card" onclick="generateBA()">
+            <div class="ba-mode-icon">&#9881;</div>
+            <h5>BA Locale (Regex)</h5>
+            <p>Estrazione istantanea con pattern matching.<br>Veloce, offline, deterministico.</p>
+            <button class="btn btn-primary btn-sm">Genera Locale</button>
+          </div>
+          <div class="ba-mode-card ${state.n8nConfigured ? '' : 'ba-mode-disabled'}" onclick="${state.n8nConfigured ? 'triggerN8nBA()' : 'configureN8n()'}">
+            <div class="ba-mode-icon">&#129302;</div>
+            <h5>BA con AI (n8n)</h5>
+            <p>${state.n8nConfigured
+              ? 'Claude + GPT pipeline via n8n.<br>Qualità superiore, richiede connessione.'
+              : 'Non configurato. Clicca per impostare<br>l\'URL webhook di n8n.'}</p>
+            <button class="btn ${state.n8nConfigured ? 'btn-primary' : 'btn-outline'} btn-sm">
+              ${state.n8nConfigured ? 'Genera con AI' : 'Configura n8n'}
+            </button>
+          </div>
         </div>
+        ${n8nStatus}
       </div>
     </div>`;
     return;
@@ -1163,11 +1192,15 @@ function renderBATab(container, data) {
   let html = '<div class="modal-body-inner ba-document">';
 
   // Header
+  const sourceLabel = ba.source === 'n8n-ai-pipeline'
+    ? '<span class="ba-source ba-source-ai">AI Pipeline</span>'
+    : '<span class="ba-source ba-source-local">Locale</span>';
   html += `<div class="ba-header">
-    <h3>${esc(ba.title)}</h3>
+    <h3>${esc(ba.title)} ${sourceLabel}</h3>
     <span class="ba-date">Generato: ${formatDate(ba.generatedAt)}</span>
     <div class="btn-row" style="margin-top:10px">
-      <button class="btn btn-sm btn-primary" onclick="generateBA()">Rigenera</button>
+      <button class="btn btn-sm btn-outline" onclick="generateBA()">Rigenera Locale</button>
+      ${state.n8nConfigured ? '<button class="btn btn-sm btn-primary" onclick="triggerN8nBA()">Rigenera con AI</button>' : ''}
       <button class="btn btn-sm btn-success" onclick="exportBADocx()">Export DOCX</button>
     </div>
   </div>`;
@@ -1321,6 +1354,181 @@ function baDocumentToText(ba) {
   lines.push('# KPI & Monitoring');
   (ba.kpiMonitoring || []).forEach(k => lines.push(`- ${k}`));
   return lines.join('\n');
+}
+
+// ══════════════════════════════════════
+//  N8N AI PIPELINE
+// ══════════════════════════════════════
+
+/**
+ * Check if n8n is configured on the backend.
+ */
+async function checkN8nConfig() {
+  try {
+    const resp = await fetch('/api/n8n/config');
+    if (resp.ok) {
+      const data = await resp.json();
+      state.n8nConfigured = data.configured;
+    }
+  } catch { /* n8n not available, silently ignore */ }
+}
+
+/**
+ * Prompt user to configure n8n webhook URL.
+ */
+async function configureN8n() {
+  const url = prompt(
+    'Inserisci l\'URL del webhook n8n:\n\n' +
+    'Esempio: https://your-n8n.app/webhook/xxxxx\n\n' +
+    'Puoi anche impostarlo via env var N8N_WEBHOOK_URL'
+  );
+  if (!url) return;
+
+  try {
+    const resp = await fetch('/api/n8n/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: url }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json();
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    }
+    state.n8nConfigured = true;
+    log('n8n webhook configurato', 'ok');
+    // Re-render BA tab if open
+    if (state.activeTab === 'ba') renderActiveTab();
+  } catch (err) {
+    log(`Errore config n8n: ${err.message}`, 'err');
+    alert(`Errore: ${err.message}`);
+  }
+}
+
+/**
+ * Trigger the n8n AI pipeline for the current recording.
+ */
+async function triggerN8nBA() {
+  if (!state.currentData) return;
+  if (!state.n8nConfigured) {
+    configureN8n();
+    return;
+  }
+
+  const fileId = state.currentData?.metadata?.fileId;
+  const fileName = state.currentData?.metadata?.filename;
+  if (!fileId) {
+    alert('fileId non disponibile');
+    return;
+  }
+
+  log('Avvio pipeline AI (n8n)...');
+
+  try {
+    const resp = await fetch('/api/n8n/trigger', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': state.token,
+      },
+      body: JSON.stringify({ fileId, fileName, base_url: state.baseUrl }),
+    });
+
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    state.n8nJob = data.job;
+
+    if (data.job.status === 'completed' && data.job.result) {
+      // Synchronous result
+      state.baDocument = data.job.result;
+      log('BA Document AI generato (sync)', 'ok');
+      updateModalTabs(state.currentData);
+      state.activeTab = 'ba';
+      renderActiveTab();
+    } else {
+      // Start polling
+      log(`Job ${data.job.jobId} avviato. Polling...`);
+      startN8nPolling(data.job.jobId);
+      state.activeTab = 'ba';
+      renderActiveTab();
+    }
+  } catch (err) {
+    log(`Errore pipeline AI: ${err.message}`, 'err');
+    alert(`Errore: ${err.message}`);
+  }
+}
+
+/**
+ * Poll n8n job status until completed or failed.
+ */
+function startN8nPolling(jobId) {
+  stopN8nPolling();
+
+  state.n8nPolling = setInterval(async () => {
+    try {
+      const resp = await fetch(`/api/n8n/status/${jobId}`);
+      if (!resp.ok) {
+        stopN8nPolling();
+        return;
+      }
+
+      const job = await resp.json();
+      state.n8nJob = job;
+
+      if (job.status === 'completed' && job.result) {
+        stopN8nPolling();
+        state.baDocument = job.result;
+        log('BA Document AI generato', 'ok');
+        updateModalTabs(state.currentData);
+        renderActiveTab();
+      } else if (job.status === 'failed') {
+        stopN8nPolling();
+        log(`Pipeline AI fallita: ${job.error}`, 'err');
+        renderActiveTab();
+      } else {
+        // Still processing — re-render status
+        if (state.activeTab === 'ba') renderActiveTab();
+      }
+    } catch {
+      stopN8nPolling();
+    }
+  }, 3000); // Poll every 3 seconds
+}
+
+function stopN8nPolling() {
+  if (state.n8nPolling) {
+    clearInterval(state.n8nPolling);
+    state.n8nPolling = null;
+  }
+}
+
+/**
+ * Render n8n job status indicator.
+ */
+function renderN8nJobStatus(job) {
+  if (!job) return '';
+
+  const statusClass = job.status === 'completed' ? 'status-ok'
+    : job.status === 'failed' ? 'status-err'
+    : 'status-info';
+
+  const statusLabel = job.status === 'pending' ? 'In attesa...'
+    : job.status === 'processing' ? `Elaborazione... (${job.chunksProcessed || 0}/${job.chunksTotal || '?'} chunks)`
+    : job.status === 'completed' ? 'Completato'
+    : `Fallito: ${job.error || 'errore sconosciuto'}`;
+
+  let html = `<div class="n8n-status" style="margin-top:16px">
+    <span class="status ${statusClass}">${esc(statusLabel)}</span>`;
+
+  if (job.status === 'processing' || job.status === 'pending') {
+    html += ' <span class="loader"></span>';
+  }
+
+  html += '</div>';
+  return html;
 }
 
 // ══════════════════════════════════════

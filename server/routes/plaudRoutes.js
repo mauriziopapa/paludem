@@ -11,13 +11,26 @@ const express = require('express');
 const router = express.Router();
 const { buildFullTranscript } = require('../services/plaudAggregator');
 const { exportBADocx } = require('../services/docxExporter');
+const { saveSession, getSessionInfo, cacheTranscript } = require('../services/sessionStore');
+
+// ── No-cache middleware: PLAUD API must never serve stale data ──
+router.use((_req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  });
+  next();
+});
 
 // ── Proxy: forward auth header to PLAUD API ──
 async function plaudFetch(url, authHeader) {
+  console.log(`[plaud-proxy] ${url.substring(0, 80)}...`);
   const resp = await fetch(url, {
     headers: {
       'Authorization': authHeader,
       'Accept': 'application/json',
+      'Cache-Control': 'no-store',
     },
   });
   if (!resp.ok) {
@@ -31,7 +44,7 @@ async function plaudFetch(url, authHeader) {
 
 /**
  * GET /api/plaud/connect
- * Test connection & return basic info.
+ * Test connection, save session, return basic info.
  */
 router.get('/connect', async (req, res) => {
   try {
@@ -45,6 +58,10 @@ router.get('/connect', async (req, res) => {
       `${base_url}/file/simple/web?skip=0&limit=1&is_trash=0&sort_by=edit_time&is_desc=true`,
       auth
     );
+
+    // ── Save session for n8n and other server-side usage ──
+    saveSession(base_url, auth);
+    console.log(`[session] Saved: ${base_url}`);
 
     res.json({
       connected: true,
@@ -114,7 +131,10 @@ router.get('/:fileId', async (req, res) => {
       mergeGap: Number(mergeGap) || 3,
     });
 
-    // 3. Attach raw detail for frontend fallbacks
+    // 3. Cache for n8n pipeline reuse
+    cacheTranscript(fileId, result);
+
+    // 4. Attach raw detail for frontend fallbacks
     result.rawDetail = fileDetail;
 
     res.json(result);
@@ -150,6 +170,14 @@ router.get('/:fileId/download-urls', async (req, res) => {
   } catch (err) {
     res.status(err.status || 502).json({ error: err.message });
   }
+});
+
+/**
+ * GET /api/plaud/session
+ * Return current session info.
+ */
+router.get('/session', (_req, res) => {
+  res.json(getSessionInfo());
 });
 
 /**
