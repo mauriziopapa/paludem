@@ -581,6 +581,158 @@ tr:hover td { background: var(--surface-alt); }
 .pipeline-log-entry.ok { color: var(--success); }
 .pipeline-log-entry.error { color: var(--error); }
 
+/* ══════════════════════════════════════
+   SORTABLE TABLE HEADER
+   ══════════════════════════════════════ */
+
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.sortable-header:hover { color: var(--primary); }
+
+/* ══════════════════════════════════════
+   BA DOCUMENT Rendering
+   ══════════════════════════════════════ */
+
+.ba-generate-prompt {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+}
+.ba-generate-prompt p:first-child {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ba-document { }
+
+.ba-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--border);
+}
+.ba-header h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.ba-date {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.ba-section {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  background: var(--surface-alt);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--border);
+}
+.ba-section h4 {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+.ba-section ul {
+  list-style: none;
+  padding: 0;
+}
+.ba-section ul li {
+  padding: 4px 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  position: relative;
+  padding-left: 14px;
+}
+.ba-section ul li::before {
+  content: "\2022";
+  position: absolute;
+  left: 0;
+  color: var(--text-muted);
+}
+
+.ba-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
+/* Section accents */
+.ba-exec { border-left-color: var(--primary); }
+.ba-context { border-left-color: var(--info); }
+.ba-objectives { border-left-color: var(--info); }
+.ba-requirements { border-left-color: var(--primary); }
+.ba-stories { border-left-color: #7c3aed; }
+.ba-functional { border-left-color: var(--info); }
+.ba-data { border-left-color: #0891b2; }
+.ba-risks { border-left-color: var(--error); }
+.ba-open { border-left-color: var(--warning); }
+.ba-actions { border-left-color: var(--warning); }
+.ba-kpi { border-left-color: var(--success); }
+
+/* Requirements table */
+.ba-req-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin-top: 8px;
+}
+.ba-req-table th {
+  text-align: left;
+  padding: 6px 10px;
+  background: var(--bg);
+  border-bottom: 2px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.ba-req-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.ba-req-id {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--primary);
+  white-space: nowrap;
+  width: 80px;
+}
+
+/* Job stories */
+.ba-story {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.ba-story-num {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.ba-story strong {
+  color: var(--primary);
+}
+
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .container { padding: 12px; }
@@ -590,4 +742,5 @@ tr:hover td { background: var(--surface-alt); }
   td, th { padding: 6px 4px; }
   .modal-toolbar { flex-direction: column; }
   .modal-toolbar input, .modal-toolbar select { max-width: 100%; }
+  .ba-story { flex-direction: column; gap: 6px; }
 }
