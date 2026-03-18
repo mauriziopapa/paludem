@@ -1,11 +1,11 @@
 /**
  * plaudRoutes.js
- * API endpoints for the PLAUD Meeting Intelligence Engine.
  *
+ * API endpoints for the PLAUD Meeting Intelligence Engine.
  * All PLAUD API calls are proxied through the backend to:
  * - Avoid CORS issues
  * - Handle gzip decompression server-side
- * - Cache and enrich data
+ * - Run the full content reconstruction pipeline
  */
 const express = require('express');
 const router = express.Router();
@@ -83,8 +83,15 @@ router.get('/recordings', async (req, res) => {
 
 /**
  * GET /api/plaud/:fileId
- * Full enriched transcript pipeline.
- * Query params: base_url, removeFillers (0|1), mergeGap (seconds)
+ * Full Content Reconstruction Engine pipeline.
+ *
+ * Query params:
+ *   base_url      — PLAUD API base URL
+ *   removeFillers — 0|1 (default 0)
+ *   mergeGap      — seconds (default 3)
+ *
+ * Response:
+ *   { transcript, summary, outline, notes, metadata, meta, log, debug, rawDetail }
  */
 router.get('/:fileId', async (req, res) => {
   try {
@@ -96,11 +103,11 @@ router.get('/:fileId', async (req, res) => {
       return res.status(400).json({ error: 'Missing authorization or base_url' });
     }
 
-    // 1. Fetch file detail from PLAUD
+    // 1. Fetch file detail from PLAUD API
     const detailResp = await plaudFetch(`${base_url}/file/detail/${fileId}`, auth);
     const fileDetail = detailResp.data || detailResp;
 
-    // 2. Run full pipeline
+    // 2. Run full Content Reconstruction Engine pipeline
     const result = await buildFullTranscript(fileDetail, {
       removeFillers: removeFillers === '1',
       mergeGap: Number(mergeGap) || 3,
