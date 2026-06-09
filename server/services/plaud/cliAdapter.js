@@ -3,6 +3,7 @@ const { runCommand, validateFileId, buildCliCommand, buildCliEnv } = require('..
 const { Errors } = require('../../utils/errors');
 const { createLogger } = require('../../utils/logger');
 const { normalizeRecording, normalizeRecordingList } = require('./recordingDto');
+const { getBootstrapResult } = require('./plaudTokenBootstrap');
 
 const log = createLogger('plaud-cli');
 const SOURCE = 'cli';
@@ -106,6 +107,8 @@ function tryParseJson(str) {
 
 async function getStatus() {
   const probe = await probeCli();
+  const bootstrap = getBootstrapResult();
+  const bootstrapped = bootstrap ? bootstrap.bootstrapped : false;
 
   if (!probe.available) {
     return {
@@ -113,6 +116,7 @@ async function getStatus() {
       status: 'cli_not_found',
       mode: 'cli',
       cliMode: config.plaud.cliMode,
+      bootstrapped,
       reason: config.plaud.cliMode === 'npx'
         ? `npx ${config.plaud.npxPackage} not available. Check network or package name.`
         : `"${config.plaud.cliBinary}" not found in PATH. Install: npm i -g @plaud-ai/cli@latest`,
@@ -123,7 +127,6 @@ async function getStatus() {
   try {
     const { stdout } = await cli(['me']);
 
-    // Parse "me" output for user info (text format)
     const emailMatch = stdout.match(/email[:\s]+(\S+@\S+)/i);
     const nameMatch = stdout.match(/(?:name|user)[:\s]+(.+)/i);
     const user = emailMatch ? emailMatch[1] : nameMatch ? nameMatch[1].trim() : null;
@@ -134,17 +137,22 @@ async function getStatus() {
       mode: 'cli',
       cliMode: config.plaud.cliMode,
       cliVersion: probe.version,
+      bootstrapped,
       user: user || '(authenticated)',
     };
   } catch (err) {
     if (err.code === 'PLAUD_CLI_NOT_AUTHENTICATED') {
+      const reason = bootstrapped
+        ? 'PLAUD CLI not authenticated despite token bootstrap. Tokens may be expired — re-run plaud login locally and update PLAUD_TOKENS_JSON.'
+        : 'PLAUD CLI installed but not authenticated. Run: plaud login';
       return {
         connected: false,
         status: 'not_authenticated',
         mode: 'cli',
         cliMode: config.plaud.cliMode,
         cliVersion: probe.version,
-        reason: 'PLAUD CLI installed but not authenticated. Run: plaud login',
+        bootstrapped,
+        reason,
       };
     }
     return {
@@ -153,6 +161,7 @@ async function getStatus() {
       mode: 'cli',
       cliMode: config.plaud.cliMode,
       cliVersion: probe.version,
+      bootstrapped,
       reason: err.message,
     };
   }
