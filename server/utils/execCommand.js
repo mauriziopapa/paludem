@@ -14,20 +14,41 @@ function sanitizeArg(arg) {
   return String(arg).replace(/[^\w\-./=:@]/g, '');
 }
 
+function buildCliCommand(config) {
+  if (config.plaud.cliMode === 'npx') {
+    return {
+      binary: 'npx',
+      prefixArgs: ['-y', config.plaud.npxPackage],
+    };
+  }
+  return {
+    binary: config.plaud.cliBinary,
+    prefixArgs: [],
+  };
+}
+
+function buildCliEnv(config) {
+  const env = { ...process.env };
+  if (config.plaud.home) {
+    env.PLAUD_HOME = config.plaud.home;
+  }
+  return env;
+}
+
 function runCommand(binary, args, options = {}) {
-  const { timeout = 30_000, cwd } = options;
+  const { timeout = 60_000, cwd, env } = options;
 
   const safeArgs = args.map(a => String(a));
 
   return new Promise((resolve, reject) => {
     log.debug(`${binary} ${safeArgs.join(' ')}`);
 
-    const child = execFile(binary, safeArgs, {
+    execFile(binary, safeArgs, {
       timeout,
       maxBuffer: 10 * 1024 * 1024,
       encoding: 'utf-8',
       cwd,
-      env: { ...process.env },
+      env: env || { ...process.env },
     }, (err, stdout, stderr) => {
       if (err) {
         if (err.killed || err.signal === 'SIGTERM') {
@@ -41,4 +62,4 @@ function runCommand(binary, args, options = {}) {
   });
 }
 
-module.exports = { runCommand, validateFileId, sanitizeArg };
+module.exports = { runCommand, validateFileId, sanitizeArg, buildCliCommand, buildCliEnv };
