@@ -808,6 +808,27 @@ tr:hover td { background: var(--surface-alt); }
   flex-wrap: wrap;
   font-size: 0.88rem;
 }
+.plaud-status-hint {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.plaud-status-hint code {
+  background: rgba(79,70,229,0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+}
+@media (prefers-color-scheme: dark) {
+  .plaud-status-hint code { background: rgba(129,140,248,0.15); }
+}
 
 /* ── Responsive ── */
 @media (max-width: 640px) {

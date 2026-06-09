@@ -1,12 +1,13 @@
-const path = require('path');
-
 const config = {
   port: parseInt(process.env.PORT, 10) || 3000,
 
   plaud: {
     mode: process.env.PLAUD_INTEGRATION_MODE || 'cli',
-    cliBinary: process.env.PLAUD_CLI_PATH || 'plaud',
-    cliTimeout: parseInt(process.env.PLAUD_CLI_TIMEOUT, 10) || 30_000,
+    cliMode: process.env.PLAUD_CLI_MODE || 'global',
+    cliBinary: process.env.PLAUD_CLI_BIN || 'plaud',
+    npxPackage: process.env.PLAUD_CLI_NPX_PACKAGE || '@plaud-ai/cli@latest',
+    home: process.env.PLAUD_HOME || '',
+    cliTimeout: parseInt(process.env.PLAUD_COMMAND_TIMEOUT_MS, 10) || 60_000,
   },
 
   n8n: {

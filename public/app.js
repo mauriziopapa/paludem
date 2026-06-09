@@ -93,10 +93,25 @@ async function checkPlaudStatus() {
 
     if (data.connected) {
       let info = `<span class="status status-ok">Connesso</span>`;
-      if (data.mode) info += ` <span class="status status-info">${esc(data.mode)}</span>`;
+      if (data.cliMode) info += ` <span class="status status-info">${esc(data.cliMode)}</span>`;
+      if (data.cliVersion) info += ` <span class="status status-info">v${esc(data.cliVersion)}</span>`;
       if (data.user) info += ` <span style="color:var(--text-muted);font-size:0.82rem">${esc(data.user)}</span>`;
       el.innerHTML = info;
-      log(`PLAUD connesso (${data.mode})`, 'ok');
+      log(`PLAUD connesso (${data.cliMode || data.mode})`, 'ok');
+    } else if (data.status === 'cli_not_found') {
+      el.innerHTML = `<span class="status status-err">CLI non trovata</span>
+        <div class="plaud-status-hint">
+          Installa la CLI PLAUD: <code>npm i -g @plaud-ai/cli@latest</code><br>
+          Oppure imposta <code>PLAUD_CLI_MODE=npx</code> nelle variabili d'ambiente.
+        </div>`;
+      log('PLAUD CLI non trovata', 'err');
+    } else if (data.status === 'not_authenticated') {
+      el.innerHTML = `<span class="status status-warn">CLI trovata, non autenticata</span>
+        ${data.cliVersion ? `<span class="status status-info">v${esc(data.cliVersion)}</span>` : ''}
+        <div class="plaud-status-hint">
+          Esegui <code>plaud login</code> nel terminale per autenticarti.
+        </div>`;
+      log('PLAUD CLI trovata ma non autenticata', 'err');
     } else {
       el.innerHTML = `<span class="status status-err">Non connesso</span>
         <span style="color:var(--text-muted);font-size:0.82rem;margin-left:8px">${esc(data.reason || '')}</span>`;
