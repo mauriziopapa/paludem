@@ -3,32 +3,23 @@
    Meeting Intelligence Engine
    ══════════════════════════════════════════════ */
 
-// ── State ──
 const state = {
-  mode: 'personal',
-  token: '',
-  baseUrl: '',
   connected: false,
   recordings: [],
   total: 0,
   skip: 0,
   limit: 20,
-  // Current modal data
   currentData: null,
   activeTab: 'transcript',
   searchQuery: '',
   speakerFilter: '',
-  // BA Document
   baDocument: null,
-  // n8n AI Pipeline
   n8nConfigured: false,
   n8nJob: null,
   n8nPolling: null,
-  // Sorting
   sort: { field: 'date', direction: 'desc' },
 };
 
-// ── Speaker color map ──
 const SPEAKER_COLORS = ['speaker-1', 'speaker-2', 'speaker-3', 'speaker-4', 'speaker-5', 'speaker-6'];
 function speakerColorClass(speaker, speakers) {
   const idx = (speakers || []).indexOf(speaker);
@@ -40,13 +31,6 @@ function speakerColorClass(speaker, speakers) {
 // ══════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Restore saved settings
-  const saved = localStorage.getItem('plaud_token');
-  const savedRegion = localStorage.getItem('plaud_region');
-  if (saved) document.getElementById('bearerToken').value = saved;
-  if (savedRegion) document.getElementById('apiRegion').value = savedRegion;
-
-  // Close modal on overlay click / Escape
   document.getElementById('contentModal').addEventListener('click', e => {
     if (e.target.id === 'contentModal') closeModal();
   });
@@ -54,21 +38,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') closeModal();
   });
 
-  // Check n8n configuration
+  checkPlaudStatus();
   checkN8nConfig();
 });
-
-// ══════════════════════════════════════
-//  AUTH TABS
-// ══════════════════════════════════════
-
-function switchAuthTab(mode, el) {
-  state.mode = mode;
-  document.querySelectorAll('#authCard .tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById('tab-personal').classList.toggle('hidden', mode !== 'personal');
-  document.getElementById('tab-developer').classList.toggle('hidden', mode !== 'developer');
-}
 
 // ══════════════════════════════════════
 //  LOGGING
@@ -82,27 +54,21 @@ function log(msg, type = '') {
 }
 
 // ══════════════════════════════════════
-//  API CALL (through backend proxy)
+//  API CALL
 // ══════════════════════════════════════
 
 async function apiCall(endpoint, options = {}) {
-  const headers = {
-    'Authorization': state.token,
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
-
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
   log(`${options.method || 'GET'} ${endpoint}`);
 
-  const url = endpoint.startsWith('/api/')
-    ? endpoint
-    : `/api/plaud${endpoint}`;
+  const url = endpoint.startsWith('/api/') ? endpoint : `/api/plaud${endpoint}`;
 
   try {
     const resp = await fetch(url, { ...options, headers });
     if (!resp.ok) {
-      const text = await resp.text().catch(() => '');
-      throw new Error(`HTTP ${resp.status}: ${text.substring(0, 200)}`);
+      const data = await resp.json().catch(() => ({}));
+      const msg = data?.error?.message || data?.error || `HTTP ${resp.status}`;
+      throw new Error(msg);
     }
     const data = await resp.json();
     log('OK', 'ok');
@@ -114,70 +80,31 @@ async function apiCall(endpoint, options = {}) {
 }
 
 // ══════════════════════════════════════
-//  CONNECT — Personal
+//  PLAUD STATUS
 // ══════════════════════════════════════
 
-async function connectPersonal() {
-  let token = document.getElementById('bearerToken').value.trim();
-  if (!token) return alert('Inserisci il Bearer Token');
-  if (!token.toLowerCase().startsWith('bearer ')) token = 'bearer ' + token;
-
-  state.token = token;
-  state.baseUrl = document.getElementById('apiRegion').value;
-
-  localStorage.setItem('plaud_token', document.getElementById('bearerToken').value.trim());
-  localStorage.setItem('plaud_region', state.baseUrl);
-
-  const statusEl = document.getElementById('authStatus');
-  statusEl.innerHTML = '<span class="loader"></span>';
+async function checkPlaudStatus() {
+  const el = document.getElementById('plaudStatus');
+  el.innerHTML = '<span class="loader"></span> Checking...';
 
   try {
-    const data = await apiCall(`/connect?base_url=${encodeURIComponent(state.baseUrl)}`);
-    state.connected = true;
-    statusEl.innerHTML = `<span class="status status-ok">Connesso — ${data.total} registrazioni</span>`;
-    document.getElementById('btnLoad').disabled = false;
-    document.getElementById('btnRefresh').disabled = false;
-    log(`Connesso! ${data.total} registrazioni`, 'ok');
-  } catch {
-    statusEl.innerHTML = '<span class="status status-err">Errore connessione</span>';
-    state.connected = false;
-  }
-}
+    const data = await apiCall('/status');
+    state.connected = data.connected;
 
-// ══════════════════════════════════════
-//  CONNECT — Developer
-// ══════════════════════════════════════
-
-async function connectDeveloper() {
-  const clientId = document.getElementById('clientId').value.trim();
-  const secretKey = document.getElementById('secretKey').value.trim();
-  if (!clientId || !secretKey) return alert('Inserisci Client ID e Secret Key');
-
-  const statusEl = document.getElementById('authStatusDev');
-  statusEl.innerHTML = '<span class="loader"></span>';
-
-  try {
-    const credentials = btoa(`${clientId}:${secretKey}`);
-    const resp = await fetch('https://platform.plaud.ai/api/oauth/api-token', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${credentials}`, 'Content-Type': 'application/json' },
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    const apiToken = data.data?.api_token || data.api_token;
-    if (!apiToken) throw new Error('api_token non trovato');
-
-    state.token = `Bearer ${apiToken}`;
-    state.baseUrl = 'https://platform.plaud.ai/api';
-    state.mode = 'developer';
-    state.connected = true;
-    statusEl.innerHTML = '<span class="status status-ok">Token generato</span>';
-    document.getElementById('btnLoad').disabled = false;
-    document.getElementById('btnRefresh').disabled = false;
-    log('Token Developer generato', 'ok');
+    if (data.connected) {
+      let info = `<span class="status status-ok">Connesso</span>`;
+      if (data.mode) info += ` <span class="status status-info">${esc(data.mode)}</span>`;
+      if (data.user) info += ` <span style="color:var(--text-muted);font-size:0.82rem">${esc(data.user)}</span>`;
+      el.innerHTML = info;
+      log(`PLAUD connesso (${data.mode})`, 'ok');
+    } else {
+      el.innerHTML = `<span class="status status-err">Non connesso</span>
+        <span style="color:var(--text-muted);font-size:0.82rem;margin-left:8px">${esc(data.reason || '')}</span>`;
+      log(`PLAUD non connesso: ${data.reason || ''}`, 'err');
+    }
   } catch (err) {
-    statusEl.innerHTML = `<span class="status status-err">Errore: ${err.message}</span>`;
-    log(`Auth errore: ${err.message}`, 'err');
+    el.innerHTML = `<span class="status status-err">Errore</span>
+      <span style="color:var(--text-muted);font-size:0.82rem;margin-left:8px">${esc(err.message)}</span>`;
   }
 }
 
@@ -186,16 +113,13 @@ async function connectDeveloper() {
 // ══════════════════════════════════════
 
 async function loadRecordings(refresh = false) {
-  if (!state.connected) return;
   if (refresh) state.skip = 0;
 
   const statusEl = document.getElementById('listStatus');
   statusEl.innerHTML = '<span class="loader"></span>';
 
   try {
-    const data = await apiCall(
-      `/recordings?base_url=${encodeURIComponent(state.baseUrl)}&skip=${state.skip}&limit=${state.limit}`
-    );
+    const data = await apiCall(`/files?skip=${state.skip}&limit=${state.limit}`);
     state.recordings = data.recordings || [];
     state.total = data.total || 0;
     renderRecordings();
@@ -217,19 +141,18 @@ function renderRecordings() {
     return;
   }
 
-  // Sort recordings
   const sorted = sortRecordings([...state.recordings]);
-
   const sortIcon = state.sort.direction === 'asc' ? '&#9650;' : '&#9660;';
+
   let html = `<table><thead><tr>
-    <th>Nome</th><th>Durata</th><th class="sortable-header" onclick="toggleSort()"">Data ${sortIcon}</th><th>Dimensione</th><th>Azioni</th>
+    <th>Nome</th><th>Durata</th><th class="sortable-header" onclick="toggleSort()">Data ${sortIcon}</th><th>Dimensione</th><th>Azioni</th>
   </tr></thead><tbody>`;
 
   for (const rec of sorted) {
-    const id = rec.file_id || rec.id;
-    const name = rec.filename || rec.name || rec.title || 'Senza nome';
+    const id = rec.id;
+    const name = rec.name || 'Senza nome';
     const duration = formatDuration(rec.duration);
-    const date = formatDate(rec.start_time || rec.created_at);
+    const date = formatDate(rec.createdAt);
     const size = rec.filesize ? formatSize(rec.filesize) : '-';
 
     html += `<tr>
@@ -239,7 +162,6 @@ function renderRecordings() {
       <td>${size}</td>
       <td><div class="btn-row">
         <button class="btn btn-sm btn-primary" onclick="openContent('${esc(id)}', '${esc(name)}')">Apri</button>
-        <button class="btn btn-sm btn-outline" onclick="downloadFile('${esc(id)}', '${esc(name)}')">Audio</button>
       </div></td>
     </tr>`;
   }
@@ -275,24 +197,16 @@ async function openContent(fileId, fileName) {
   state.searchQuery = '';
   state.speakerFilter = '';
 
-  // Show loading
   document.getElementById('modalBodyContent').innerHTML =
-    '<div class="loading-state"><div class="loader loader-lg"></div><div>Pipeline in corso: download, decompress, parse...</div></div>';
+    '<div class="loading-state"><div class="loader loader-lg"></div><div>Pipeline in corso...</div></div>';
 
-  // Reset tabs
   updateModalTabs(null);
 
   try {
-    const data = await apiCall(
-      `/${fileId}?base_url=${encodeURIComponent(state.baseUrl)}`
-    );
+    const data = await apiCall(`/files/${fileId}/full`);
     state.currentData = data;
     log(`Pipeline completa per: ${fileName}`, 'ok');
-
-    // Update tabs with badges
     updateModalTabs(data);
-
-    // Render active tab
     renderActiveTab();
   } catch (err) {
     document.getElementById('modalBodyContent').innerHTML =
@@ -350,9 +264,6 @@ function renderToolbar() {
         ${speakerOptions}
       </select>
     `;
-  } else if (state.activeTab === 'summary' || state.activeTab === 'outline') {
-    toolbar.classList.add('hidden');
-    toolbar.innerHTML = '';
   } else {
     toolbar.classList.add('hidden');
     toolbar.innerHTML = '';
@@ -402,7 +313,6 @@ function renderActiveTab() {
 
 function renderTranscript(container, data) {
   if (!data.transcript || !data.transcript.segments.length) {
-    // Fallback: show rawDetail text
     const raw = data.rawDetail;
     let fallbackText = '';
     if (raw) {
@@ -418,14 +328,11 @@ function renderTranscript(container, data) {
   const { segments, speakers, stats } = data.transcript;
   let filtered = segments;
 
-  // Speaker filter
   if (state.speakerFilter) {
     filtered = filtered.filter(s => s.speaker === state.speakerFilter);
   }
 
   let html = '<div class="modal-body-inner">';
-
-  // Stats bar
   html += `<div style="margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap">
     <span class="status status-info">${stats.speakersCount} speaker</span>
     <span class="status status-info">${stats.wordsCount} parole</span>
@@ -438,7 +345,6 @@ function renderTranscript(container, data) {
     const borderClass = colorClass + '-border';
     let text = esc(seg.text);
 
-    // Highlight search matches
     if (state.searchQuery) {
       const regex = new RegExp(`(${escRegex(state.searchQuery)})`, 'gi');
       text = text.replace(regex, '<mark>$1</mark>');
@@ -453,7 +359,6 @@ function renderTranscript(container, data) {
     </div>`;
   }
 
-  // Speaker stats
   if (stats.speakerStats && Object.keys(stats.speakerStats).length > 1) {
     html += '<div style="margin-top:20px"><h4 style="font-size:0.85rem;margin-bottom:8px">Distribuzione speaker</h4>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
@@ -506,11 +411,8 @@ function renderSummary(container, data) {
     </div>`;
   }
 
-  // Always show raw markdown
   if (raw) {
-    if (hasSections) {
-      html += '<details style="margin-top:16px"><summary style="cursor:pointer;font-size:0.82rem;color:var(--text-muted)">Mostra testo originale</summary>';
-    }
+    if (hasSections) html += '<details style="margin-top:16px"><summary style="cursor:pointer;font-size:0.82rem;color:var(--text-muted)">Mostra testo originale</summary>';
     html += `<div class="summary-raw" style="margin-top:8px">${esc(raw)}</div>`;
     if (hasSections) html += '</details>';
   }
@@ -530,7 +432,6 @@ function renderOutline(container, data) {
   }
 
   let html = '<div class="modal-body-inner"><ul class="outline-tree">';
-
   for (const section of data.outline.sections) {
     const level = Math.min(section.level || 1, 4);
     const time = section.timestamp != null ? formatTimestamp(section.timestamp) : '';
@@ -544,7 +445,6 @@ function renderOutline(container, data) {
       ${section.summary ? `<div class="outline-summary hidden">${esc(section.summary)}</div>` : ''}
     </li>`;
   }
-
   html += '</ul></div>';
   container.innerHTML = html;
 }
@@ -569,38 +469,34 @@ function renderNotes(container, data) {
   }
 
   let html = '<div class="modal-body-inner">';
-
   for (const note of data.notes) {
     html += `<div class="note-card">
       <h4>${esc(note.title)} <span class="note-type">${esc(note.type)}</span></h4>
       <div class="note-content">${esc(note.content)}</div>
     </div>`;
   }
-
   html += '</div>';
   container.innerHTML = html;
 }
 
 // ══════════════════════════════════════
-//  RENDER: Pipeline (debug + metrics)
+//  RENDER: Pipeline
 // ══════════════════════════════════════
 
 function renderPipeline(container, data) {
   let html = '<div class="modal-body-inner">';
 
-  // Pipeline metrics
   const meta = data.meta || data.metadata?.pipeline;
   if (meta) {
     html += '<h4 style="font-size:0.85rem;margin-bottom:10px">Pipeline Metrics</h4>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">';
-    html += `<span class="status status-info">${meta.totalContents} totali</span>`;
-    html += `<span class="status status-ok">${meta.downloadedContents || meta.processedContents || 0} scaricati</span>`;
+    if (meta.totalContents != null) html += `<span class="status status-info">${meta.totalContents} totali</span>`;
+    if (meta.downloadedContents) html += `<span class="status status-ok">${meta.downloadedContents} scaricati</span>`;
     if (meta.failedContents > 0) html += `<span class="status status-err">${meta.failedContents} falliti</span>`;
     if (meta.duplicatesRemoved > 0) html += `<span class="status status-warn">${meta.duplicatesRemoved} duplicati rimossi</span>`;
-    html += `<span class="status status-info">${meta.pipelineMs}ms</span>`;
+    if (meta.pipelineMs) html += `<span class="status status-info">${meta.pipelineMs}ms</span>`;
     html += '</div>';
 
-    // Groups breakdown
     if (meta.groups) {
       html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">';
       for (const [cat, count] of Object.entries(meta.groups)) {
@@ -614,9 +510,8 @@ function renderPipeline(container, data) {
     }
   }
 
-  // Debug: all contents table
   if (data.debug && data.debug.length > 0) {
-    html += '<h4 style="font-size:0.85rem;margin-bottom:8px">Content Items (all downloaded)</h4>';
+    html += '<h4 style="font-size:0.85rem;margin-bottom:8px">Content Items</h4>';
     html += '<div style="overflow-x:auto"><table><thead><tr>';
     html += '<th>#</th><th>Category</th><th>data_type</th><th>Title</th><th>Tab</th><th>Format</th><th>Size</th><th>Time</th><th>Hash</th>';
     html += '</tr></thead><tbody>';
@@ -638,10 +533,8 @@ function renderPipeline(container, data) {
         <td style="font-family:var(--font-mono);font-size:0.7rem">${esc(item.hash)}</td>
       </tr>`;
     }
-
     html += '</tbody></table></div>';
 
-    // Content previews
     html += '<h4 style="font-size:0.85rem;margin:16px 0 8px">Content Previews</h4>';
     for (const item of data.debug) {
       if (item.rawPreview) {
@@ -653,7 +546,6 @@ function renderPipeline(container, data) {
     }
   }
 
-  // Pipeline log
   if (data.log && data.log.length > 0) {
     html += '<h4 style="font-size:0.85rem;margin:16px 0 8px">Pipeline Log</h4>';
     html += '<div class="pipeline-log">';
@@ -675,23 +567,20 @@ function renderPipeline(container, data) {
 function renderRaw(container, data) {
   let html = '<div class="modal-body-inner">';
 
-  // Metadata
   if (data.metadata) {
     html += '<h4 style="font-size:0.85rem;margin-bottom:8px">Metadata</h4>';
     html += `<div class="summary-raw">${esc(JSON.stringify(data.metadata, null, 2))}</div>`;
   }
 
-  // Raw detail
   if (data.rawDetail) {
-    html += '<details style="margin-top:16px"><summary style="cursor:pointer;font-size:0.82rem;color:var(--text-muted)">Raw file detail JSON (from PLAUD API)</summary>';
+    html += '<details style="margin-top:16px"><summary style="cursor:pointer;font-size:0.82rem;color:var(--text-muted)">Raw file detail JSON</summary>';
     html += `<div class="summary-raw" style="margin-top:8px;max-height:400px;overflow-y:auto">${esc(JSON.stringify(data.rawDetail, null, 2))}</div>`;
     html += '</details>';
   }
 
-  // Full response JSON
   html += '<details style="margin-top:16px"><summary style="cursor:pointer;font-size:0.82rem;color:var(--text-muted)">Full pipeline response JSON</summary>';
   const exportable = { ...data };
-  delete exportable.rawDetail; // avoid double-nesting
+  delete exportable.rawDetail;
   html += `<div class="summary-raw" style="margin-top:8px;max-height:400px;overflow-y:auto">${esc(JSON.stringify(exportable, null, 2))}</div>`;
   html += '</details>';
 
@@ -707,10 +596,7 @@ function updateFooter() {
   const left = document.getElementById('modalFooterLeft');
   const data = state.currentData;
 
-  if (!data) {
-    left.innerHTML = '';
-    return;
-  }
+  if (!data) { left.innerHTML = ''; return; }
 
   const m = data.metadata || {};
   const meta = data.meta || m.pipeline || {};
@@ -757,10 +643,8 @@ function getCurrentTabText() {
   if (!data) return '';
 
   switch (state.activeTab) {
-    case 'transcript':
-      return data.transcript?.fullText || '';
-    case 'summary':
-      return data.summary?.raw || '';
+    case 'transcript': return data.transcript?.fullText || '';
+    case 'summary':    return data.summary?.raw || '';
     case 'outline':
       return (data.outline?.sections || []).map(s => {
         const indent = '  '.repeat((s.level || 1) - 1);
@@ -773,41 +657,7 @@ function getCurrentTabText() {
       return state.baDocument ? baDocumentToText(state.baDocument) : '';
     case 'raw':
       return JSON.stringify(data, null, 2);
-    default:
-      return '';
-  }
-}
-
-// ══════════════════════════════════════
-//  DOWNLOAD AUDIO
-// ══════════════════════════════════════
-
-async function downloadFile(fileId, fileName) {
-  log(`Download audio: ${fileName}`);
-  try {
-    const data = await apiCall(`/${fileId}/download-urls?base_url=${encodeURIComponent(state.baseUrl)}`);
-    const urls = data.urls || [];
-
-    if (urls.length === 0) {
-      alert('Nessun URL di download disponibile');
-      return;
-    }
-
-    if (urls.length === 1) {
-      window.open(urls[0].url, '_blank');
-      log(`Download: ${urls[0].label}`, 'ok');
-    } else {
-      const choice = prompt(
-        `Formati:\n${urls.map((u, i) => `${i + 1}. ${u.label}`).join('\n')}\n\nScegli:`, '1'
-      );
-      const idx = parseInt(choice) - 1;
-      if (idx >= 0 && idx < urls.length) {
-        window.open(urls[idx].url, '_blank');
-        log(`Download: ${urls[idx].label}`, 'ok');
-      }
-    }
-  } catch (err) {
-    alert(`Errore download: ${err.message}`);
+    default: return '';
   }
 }
 
@@ -823,9 +673,6 @@ function closeModal() {
 //  HELPERS — Date / Timestamp
 // ══════════════════════════════════════
 
-/**
- * Normalize any timestamp (seconds, milliseconds, ISO string) to a Date.
- */
 function normalizeDate(ts) {
   if (!ts) return null;
   if (ts instanceof Date) return ts;
@@ -835,23 +682,16 @@ function normalizeDate(ts) {
   }
   const n = Number(ts);
   if (isNaN(n)) return null;
-  if (n > 1e12) return new Date(n);       // milliseconds
-  if (n > 1e9)  return new Date(n * 1000); // seconds
+  if (n > 1e12) return new Date(n);
+  if (n > 1e9)  return new Date(n * 1000);
   return null;
 }
 
-/**
- * Format a date/timestamp for display in the recordings table (Italian locale).
- */
 function formatDate(ts) {
   const d = normalizeDate(ts);
   if (!d) return '-';
   return d.toLocaleString('it-IT', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 }
 
@@ -888,8 +728,8 @@ function formatSize(bytes) {
 
 function sortRecordings(data) {
   return data.sort((a, b) => {
-    const da = normalizeDate(a.start_time || a.created_at)?.getTime() || 0;
-    const db = normalizeDate(b.start_time || b.created_at)?.getTime() || 0;
+    const da = normalizeDate(a.createdAt)?.getTime() || 0;
+    const db = normalizeDate(b.createdAt)?.getTime() || 0;
     return state.sort.direction === 'asc' ? da - db : db - da;
   });
 }
@@ -903,70 +743,34 @@ function toggleSort() {
 //  BA GENERATOR (EGO Template)
 // ══════════════════════════════════════
 
-/**
- * Generate a structured Business Analysis document from pipeline data.
- * Uses transcript, summary, outline, and notes to extract:
- * - Executive Summary, Requirements, Job Stories, Risks, Actions, etc.
- */
 function generateBADocument(data) {
   if (!data) return null;
 
   const transcript = data.transcript || {};
   const summary = data.summary || {};
   const outline = data.outline || {};
-  const notes = data.notes || [];
   const metadata = data.metadata || {};
   const sections = summary.sections || {};
   const fullText = transcript.fullText || '';
   const segments = transcript.segments || [];
 
-  // ── Executive Summary ──
   const executiveSummary = buildExecutiveSummary(sections, metadata, segments);
-
-  // ── Business Context ──
   const businessContext = buildBusinessContext(metadata, sections, fullText);
-
-  // ── Objectives ──
   const objectives = extractObjectives(sections, fullText);
-
-  // ── Requirements (RF) ──
   const requirements = extractRequirements(fullText, sections);
-
-  // ── Job Stories ──
   const jobStories = extractJobStories(fullText, sections);
-
-  // ── Functional Analysis ──
   const functionalAnalysis = buildFunctionalAnalysis(outline, sections);
-
-  // ── Data & Integration Points ──
   const dataIntegration = extractDataIntegration(fullText);
-
-  // ── Risks & Issues ──
   const risks = extractRisks(sections, fullText);
-
-  // ── Open Points ──
   const openPoints = extractOpenPoints(fullText, sections);
-
-  // ── Next Actions ──
   const nextActions = extractNextActions(sections, fullText);
-
-  // ── KPI & Monitoring ──
   const kpiMonitoring = extractKPI(fullText);
 
   return {
     title: metadata.filename || 'BA Document',
     generatedAt: new Date().toISOString(),
-    executiveSummary,
-    businessContext,
-    objectives,
-    requirements,
-    jobStories,
-    functionalAnalysis,
-    dataIntegration,
-    risks,
-    openPoints,
-    nextActions,
-    kpiMonitoring,
+    executiveSummary, businessContext, objectives, requirements, jobStories,
+    functionalAnalysis, dataIntegration, risks, openPoints, nextActions, kpiMonitoring,
   };
 }
 
@@ -978,7 +782,6 @@ function buildExecutiveSummary(sections, metadata, segments) {
     const speakers = [...new Set(segments.map(s => s.speaker))];
     parts.push(`Partecipanti: ${speakers.join(', ')}`);
   }
-  // Use key points as summary
   const keyPoints = sections.keyPoints || [];
   if (keyPoints.length > 0) {
     parts.push('', 'Punti principali:');
@@ -990,7 +793,6 @@ function buildExecutiveSummary(sections, metadata, segments) {
 function buildBusinessContext(metadata, sections, fullText) {
   const parts = [];
   if (metadata.createdAt) parts.push(`Data meeting: ${formatDate(metadata.createdAt)}`);
-  // Extract context from first few segments
   const contextSnippet = fullText.substring(0, 500);
   if (contextSnippet) {
     parts.push('', 'Contesto discusso:');
@@ -1001,16 +803,12 @@ function buildBusinessContext(metadata, sections, fullText) {
 
 function extractObjectives(sections, fullText) {
   const objectives = [];
-  // From key points
   (sections.keyPoints || []).forEach(p => {
     if (/obiettiv|goal|target|scopo|finalit/i.test(p)) objectives.push(p);
   });
-  // From transcript keywords
   const objPatterns = /(?:l'obiettivo|lo scopo|il goal|dobbiamo raggiungere|vogliamo ottenere|the goal is|we aim to)\s+[^.]+/gi;
   let m;
-  while ((m = objPatterns.exec(fullText)) !== null) {
-    objectives.push(m[0].trim());
-  }
+  while ((m = objPatterns.exec(fullText)) !== null) objectives.push(m[0].trim());
   return objectives.length > 0 ? objectives : ['Nessun obiettivo esplicito individuato nel meeting.'];
 }
 
@@ -1020,29 +818,23 @@ function extractRequirements(fullText, sections) {
   let m;
   while ((m = reqPatterns.exec(fullText)) !== null) {
     const text = m[0].trim();
-    if (text.length > 15 && text.length < 300) {
+    if (text.length > 15 && text.length < 300)
       reqs.push({ id: `RF-${String(reqs.length + 1).padStart(3, '0')}`, text });
-    }
   }
-  // Also from decisions
   (sections.decisions || []).forEach(d => {
-    if (/deve|implementare|richiede|should|must/i.test(d)) {
+    if (/deve|implementare|richiede|should|must/i.test(d))
       reqs.push({ id: `RF-${String(reqs.length + 1).padStart(3, '0')}`, text: d });
-    }
   });
-  // Deduplicate by similarity
   return deduplicateByText(reqs, 'text').slice(0, 20);
 }
 
 function extractJobStories(fullText, sections) {
   const stories = [];
-  // Extract "As a ... I want ... so that ..." or Italian equivalents
   const storyPatterns = /(?:as a|come|in qualità di)\s+([^,]+),?\s*(?:I want|vorrei|voglio)\s+([^,]+),?\s*(?:so that|in modo che|così che|affinché)\s+([^.]+)/gi;
   let m;
-  while ((m = storyPatterns.exec(fullText)) !== null) {
+  while ((m = storyPatterns.exec(fullText)) !== null)
     stories.push({ user: m[1].trim(), want: m[2].trim(), value: m[3].trim() });
-  }
-  // Infer from requirements if no explicit stories
+
   if (stories.length === 0) {
     const actions = sections.actions || [];
     const decisions = sections.decisions || [];
@@ -1059,17 +851,11 @@ function extractJobStories(fullText, sections) {
 
 function buildFunctionalAnalysis(outline, sections) {
   const items = [];
-  // From outline sections
   if (outline.sections) {
-    outline.sections.forEach(s => {
-      items.push({ title: s.title, level: s.level || 1, detail: s.summary || '' });
-    });
+    outline.sections.forEach(s => items.push({ title: s.title, level: s.level || 1, detail: s.summary || '' }));
   }
-  // If no outline, use key points
   if (items.length === 0 && sections.keyPoints) {
-    sections.keyPoints.forEach(p => {
-      items.push({ title: p, level: 1, detail: '' });
-    });
+    sections.keyPoints.forEach(p => items.push({ title: p, level: 1, detail: '' }));
   }
   return items;
 }
@@ -1096,13 +882,11 @@ function extractRisks(sections, fullText) {
   return deduplicateSimple(risks).slice(0, 15);
 }
 
-function extractOpenPoints(fullText, sections) {
+function extractOpenPoints(fullText) {
   const points = [];
   const patterns = /(?:da definire|da chiarire|da decidere|open point|punto aperto|TBD|to be defined|to be decided|da verificare|da confermare)\s*[:\s]*[^.!?]+[.!?]?/gi;
   let m;
-  while ((m = patterns.exec(fullText)) !== null) {
-    points.push(m[0].trim());
-  }
+  while ((m = patterns.exec(fullText)) !== null) points.push(m[0].trim());
   return deduplicateSimple(points).slice(0, 10);
 }
 
@@ -1121,9 +905,7 @@ function extractKPI(fullText) {
   const kpis = [];
   const patterns = /(?:KPI|metrica|metric|indicatore|measure|target|SLA|performance|benchmark|conversion|tasso)\s*[:\s]*[^.!?]+[.!?]?/gi;
   let m;
-  while ((m = patterns.exec(fullText)) !== null) {
-    kpis.push(m[0].trim());
-  }
+  while ((m = patterns.exec(fullText)) !== null) kpis.push(m[0].trim());
   return deduplicateSimple(kpis).slice(0, 10);
 }
 
@@ -1153,9 +935,7 @@ function deduplicateByText(arr, field) {
 
 function renderBATab(container, data) {
   if (!state.baDocument) {
-    const n8nStatus = state.n8nJob
-      ? renderN8nJobStatus(state.n8nJob)
-      : '';
+    const n8nStatus = state.n8nJob ? renderN8nJobStatus(state.n8nJob) : '';
 
     container.innerHTML = `<div class="modal-body-inner">
       <div class="ba-generate-prompt">
@@ -1191,7 +971,6 @@ function renderBATab(container, data) {
   const ba = state.baDocument;
   let html = '<div class="modal-body-inner ba-document">';
 
-  // Header
   const sourceLabel = ba.source === 'n8n-ai-pipeline'
     ? '<span class="ba-source ba-source-ai">AI Pipeline</span>'
     : '<span class="ba-source ba-source-local">Locale</span>';
@@ -1205,16 +984,10 @@ function renderBATab(container, data) {
     </div>
   </div>`;
 
-  // 1. Executive Summary
   html += renderBASection('Executive Summary', ba.executiveSummary, 'ba-exec');
-
-  // 2. Business Context
   html += renderBASection('Business Context', ba.businessContext, 'ba-context');
-
-  // 3. Objectives
   html += renderBAListSection('Objectives', ba.objectives, 'ba-objectives');
 
-  // 4. Requirements
   if (ba.requirements.length > 0) {
     html += '<div class="ba-section ba-requirements"><h4>Requirements (RF)</h4>';
     html += '<table class="ba-req-table"><thead><tr><th>ID</th><th>Requisito</th></tr></thead><tbody>';
@@ -1224,7 +997,6 @@ function renderBATab(container, data) {
     html += '</tbody></table></div>';
   }
 
-  // 5. Job Stories
   if (ba.jobStories.length > 0) {
     html += '<div class="ba-section ba-stories"><h4>Job Stories</h4>';
     ba.jobStories.forEach((s, i) => {
@@ -1238,7 +1010,6 @@ function renderBATab(container, data) {
     html += '</div>';
   }
 
-  // 6. Functional Analysis
   if (ba.functionalAnalysis.length > 0) {
     html += '<div class="ba-section ba-functional"><h4>Functional Analysis</h4><ul>';
     ba.functionalAnalysis.forEach(f => {
@@ -1248,19 +1019,10 @@ function renderBATab(container, data) {
     html += '</ul></div>';
   }
 
-  // 7. Data & Integration
   html += renderBAListSection('Data & Integration Points', ba.dataIntegration, 'ba-data');
-
-  // 8. Risks & Issues
   html += renderBAListSection('Risks & Issues', ba.risks, 'ba-risks');
-
-  // 9. Open Points
   html += renderBAListSection('Open Points', ba.openPoints, 'ba-open');
-
-  // 10. Next Actions
   html += renderBAListSection('Next Actions', ba.nextActions, 'ba-actions');
-
-  // 11. KPI & Monitoring
   html += renderBAListSection('KPI & Monitoring', ba.kpiMonitoring, 'ba-kpi');
 
   html += '</div>';
@@ -1291,11 +1053,7 @@ function generateBA() {
 }
 
 async function exportBADocx() {
-  if (!state.baDocument) {
-    alert('Genera prima il BA Document');
-    return;
-  }
-
+  if (!state.baDocument) { alert('Genera prima il BA Document'); return; }
   log('Esportazione DOCX in corso...');
 
   try {
@@ -1304,10 +1062,7 @@ async function exportBADocx() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ baDocument: state.baDocument }),
     });
-
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
-    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
 
     const blob = await resp.blob();
     const filename = sanitizeFilename(state.baDocument.title || 'BA_Document') + '_BA.docx';
@@ -1319,9 +1074,6 @@ async function exportBADocx() {
   }
 }
 
-/**
- * Convert BA document to plain text for copy/TXT export.
- */
 function baDocumentToText(ba) {
   const lines = [];
   lines.push(`# ${ba.title}`, `Generato: ${ba.generatedAt}`, '');
@@ -1360,9 +1112,6 @@ function baDocumentToText(ba) {
 //  N8N AI PIPELINE
 // ══════════════════════════════════════
 
-/**
- * Check if n8n is configured on the backend.
- */
 async function checkN8nConfig() {
   try {
     const resp = await fetch('/api/n8n/config');
@@ -1370,12 +1119,9 @@ async function checkN8nConfig() {
       const data = await resp.json();
       state.n8nConfigured = data.configured;
     }
-  } catch { /* n8n not available, silently ignore */ }
+  } catch { /* silently ignore */ }
 }
 
-/**
- * Prompt user to configure n8n webhook URL.
- */
 async function configureN8n() {
   const url = prompt(
     'Inserisci l\'URL del webhook n8n:\n\n' +
@@ -1392,11 +1138,10 @@ async function configureN8n() {
     });
     if (!resp.ok) {
       const data = await resp.json();
-      throw new Error(data.error || `HTTP ${resp.status}`);
+      throw new Error(data.error?.message || data.error || `HTTP ${resp.status}`);
     }
     state.n8nConfigured = true;
     log('n8n webhook configurato', 'ok');
-    // Re-render BA tab if open
     if (state.activeTab === 'ba') renderActiveTab();
   } catch (err) {
     log(`Errore config n8n: ${err.message}`, 'err');
@@ -1404,52 +1149,38 @@ async function configureN8n() {
   }
 }
 
-/**
- * Trigger the n8n AI pipeline for the current recording.
- */
 async function triggerN8nBA() {
   if (!state.currentData) return;
-  if (!state.n8nConfigured) {
-    configureN8n();
-    return;
-  }
+  if (!state.n8nConfigured) { configureN8n(); return; }
 
   const fileId = state.currentData?.metadata?.fileId;
   const fileName = state.currentData?.metadata?.filename;
-  if (!fileId) {
-    alert('fileId non disponibile');
-    return;
-  }
+  if (!fileId) { alert('fileId non disponibile'); return; }
 
   log('Avvio pipeline AI (n8n)...');
 
   try {
     const resp = await fetch('/api/n8n/trigger', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': state.token,
-      },
-      body: JSON.stringify({ fileId, fileName, base_url: state.baseUrl }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileId, fileName }),
     });
 
     if (!resp.ok) {
       const data = await resp.json().catch(() => ({}));
-      throw new Error(data.error || `HTTP ${resp.status}`);
+      throw new Error(data.error?.message || data.error || `HTTP ${resp.status}`);
     }
 
     const data = await resp.json();
     state.n8nJob = data.job;
 
     if (data.job.status === 'completed' && data.job.result) {
-      // Synchronous result
       state.baDocument = data.job.result;
       log('BA Document AI generato (sync)', 'ok');
       updateModalTabs(state.currentData);
       state.activeTab = 'ba';
       renderActiveTab();
     } else {
-      // Start polling
       log(`Job ${data.job.jobId} avviato. Polling...`);
       startN8nPolling(data.job.jobId);
       state.activeTab = 'ba';
@@ -1461,19 +1192,13 @@ async function triggerN8nBA() {
   }
 }
 
-/**
- * Poll n8n job status until completed or failed.
- */
 function startN8nPolling(jobId) {
   stopN8nPolling();
 
   state.n8nPolling = setInterval(async () => {
     try {
       const resp = await fetch(`/api/n8n/status/${jobId}`);
-      if (!resp.ok) {
-        stopN8nPolling();
-        return;
-      }
+      if (!resp.ok) { stopN8nPolling(); return; }
 
       const job = await resp.json();
       state.n8nJob = job;
@@ -1489,13 +1214,12 @@ function startN8nPolling(jobId) {
         log(`Pipeline AI fallita: ${job.error}`, 'err');
         renderActiveTab();
       } else {
-        // Still processing — re-render status
         if (state.activeTab === 'ba') renderActiveTab();
       }
     } catch {
       stopN8nPolling();
     }
-  }, 3000); // Poll every 3 seconds
+  }, 3000);
 }
 
 function stopN8nPolling() {
@@ -1505,15 +1229,11 @@ function stopN8nPolling() {
   }
 }
 
-/**
- * Render n8n job status indicator.
- */
 function renderN8nJobStatus(job) {
   if (!job) return '';
 
   const statusClass = job.status === 'completed' ? 'status-ok'
-    : job.status === 'failed' ? 'status-err'
-    : 'status-info';
+    : job.status === 'failed' ? 'status-err' : 'status-info';
 
   const statusLabel = job.status === 'pending' ? 'In attesa...'
     : job.status === 'processing' ? `Elaborazione... (${job.chunksProcessed || 0}/${job.chunksTotal || '?'} chunks)`
@@ -1522,11 +1242,7 @@ function renderN8nJobStatus(job) {
 
   let html = `<div class="n8n-status" style="margin-top:16px">
     <span class="status ${statusClass}">${esc(statusLabel)}</span>`;
-
-  if (job.status === 'processing' || job.status === 'pending') {
-    html += ' <span class="loader"></span>';
-  }
-
+  if (job.status === 'processing' || job.status === 'pending') html += ' <span class="loader"></span>';
   html += '</div>';
   return html;
 }
