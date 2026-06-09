@@ -9,63 +9,16 @@
 <body>
   <div class="container">
     <h1><span>PALUDEM</span> Meeting Intelligence</h1>
-    <p class="subtitle">PLAUD API &rarr; Transcript parsing &rarr; Enrichment &rarr; Dashboard</p>
+    <p class="subtitle">PLAUD CLI &rarr; Transcript parsing &rarr; Enrichment &rarr; Dashboard</p>
 
-    <!-- ═══ AUTH CARD ═══ -->
-    <div class="card" id="authCard">
-      <h2>Autenticazione</h2>
-      <div class="tabs">
-        <button class="tab active" onclick="switchAuthTab('personal', this)">Account Personale</button>
-        <button class="tab" onclick="switchAuthTab('developer', this)">Developer Platform</button>
+    <!-- ═══ STATUS CARD ═══ -->
+    <div class="card" id="statusCard">
+      <h2>PLAUD Connection</h2>
+      <div class="plaud-status" id="plaudStatus">
+        <span class="loader"></span> Checking connection...
       </div>
-
-      <!-- Personal Auth -->
-      <div id="tab-personal">
-        <div class="hint">
-          <strong>Come ottenere il token:</strong><br>
-          1. Accedi a <a href="https://web.plaud.ai" target="_blank">web.plaud.ai</a><br>
-          2. DevTools (F12) &rarr; Application &rarr; Local Storage &rarr; <code>web.plaud.ai</code><br>
-          3. Copia il valore di <code>tokenstr</code><br>
-          Oppure: Network tab &rarr; header <code>Authorization</code> da qualsiasi richiesta a <code>api.plaud.ai</code>
-        </div>
-        <div class="row">
-          <div class="form-group">
-            <label>Bearer Token</label>
-            <input type="password" id="bearerToken" placeholder="bearer eyJhbGciOiJIUzI1NiIs...">
-          </div>
-          <div class="form-group" style="max-width:180px">
-            <label>Regione API</label>
-            <select id="apiRegion">
-              <option value="https://api.plaud.ai">Global (US/Asia)</option>
-              <option value="https://api-euc1.plaud.ai">Europa (EU)</option>
-            </select>
-          </div>
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-primary" onclick="connectPersonal()">Connetti</button>
-          <span id="authStatus"></span>
-        </div>
-      </div>
-
-      <!-- Developer Auth -->
-      <div id="tab-developer" class="hidden">
-        <div class="hint">
-          <strong>API Ufficiale:</strong> Crea un'APP su <a href="https://platform.plaud.ai" target="_blank">platform.plaud.ai</a> per ottenere Client ID e Secret Key.
-        </div>
-        <div class="row">
-          <div class="form-group">
-            <label>Client ID</label>
-            <input type="text" id="clientId" placeholder="il-tuo-client-id">
-          </div>
-          <div class="form-group">
-            <label>Secret Key</label>
-            <input type="password" id="secretKey" placeholder="la-tua-secret-key">
-          </div>
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-primary" onclick="connectDeveloper()">Genera Token</button>
-          <span id="authStatusDev"></span>
-        </div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-outline btn-sm" onclick="checkPlaudStatus()">Refresh Status</button>
       </div>
     </div>
 
@@ -73,12 +26,12 @@
     <div class="card">
       <h2>Registrazioni</h2>
       <div class="btn-row" style="margin-bottom:12px">
-        <button class="btn btn-primary" onclick="loadRecordings()" id="btnLoad" disabled>Carica Lista</button>
-        <button class="btn btn-outline" onclick="loadRecordings(true)" id="btnRefresh" disabled>Aggiorna</button>
+        <button class="btn btn-primary" onclick="loadRecordings()" id="btnLoad">Carica Lista</button>
+        <button class="btn btn-outline" onclick="loadRecordings(true)" id="btnRefresh">Aggiorna</button>
         <span id="listStatus"></span>
       </div>
       <div id="recordingsTable">
-        <div class="empty">Connettiti e carica la lista delle registrazioni</div>
+        <div class="empty">Verifica la connessione PLAUD e carica la lista</div>
       </div>
       <div class="pagination hidden" id="pagination">
         <span id="pageInfo"></span>
@@ -92,7 +45,7 @@
     <!-- ═══ LOG CARD ═══ -->
     <div class="card">
       <h2>Log</h2>
-      <div id="log"><div class="log-entry" style="color:var(--text-muted)">In attesa di connessione...</div></div>
+      <div id="log"><div class="log-entry" style="color:var(--text-muted)">In attesa...</div></div>
     </div>
   </div>
 
@@ -101,13 +54,11 @@
        ═══════════════════════════════════ -->
   <div class="modal-overlay" id="contentModal">
     <div class="modal">
-      <!-- Header -->
       <div class="modal-header">
         <h3 id="modalTitle">Contenuto</h3>
         <button class="close-btn" onclick="closeModal()">&times;</button>
       </div>
 
-      <!-- Tabs -->
       <div class="modal-tabs" id="modalTabs">
         <button class="modal-tab active">Trascrizione</button>
         <button class="modal-tab">Sommario</button>
@@ -116,17 +67,14 @@
         <button class="modal-tab">Raw</button>
       </div>
 
-      <!-- Toolbar (search, speaker filter) -->
       <div class="modal-toolbar hidden" id="modalToolbar"></div>
 
-      <!-- Body -->
       <div class="modal-body">
         <div id="modalBodyContent">
           <div class="empty">Seleziona una registrazione</div>
         </div>
       </div>
 
-      <!-- Footer -->
       <div class="modal-footer">
         <div class="modal-footer-left" id="modalFooterLeft"></div>
         <div class="modal-footer-right">

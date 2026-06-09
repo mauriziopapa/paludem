@@ -13,7 +13,8 @@
  * For multi-user: swap with Redis or a Map keyed by session ID.
  */
 
-const SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const config = require('../config');
+const SESSION_TTL_MS = config.session.ttlMs;
 
 // ── Primary session ──
 let session = {
@@ -25,7 +26,7 @@ let session = {
 
 // ── Transcript cache: fileId → { data, cachedAt } ──
 const transcriptCache = new Map();
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+const CACHE_TTL_MS = config.session.cacheTtlMs;
 
 // ══════════════════════════════════════
 //  SESSION MANAGEMENT

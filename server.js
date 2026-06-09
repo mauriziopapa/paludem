@@ -1,38 +1,33 @@
 const express = require('express');
 const path = require('path');
+const config = require('./server/config');
+const { createLogger } = require('./server/utils/logger');
 const plaudRoutes = require('./server/routes/plaudRoutes');
 const n8nRoutes = require('./server/routes/n8nRoutes');
-const { getSessionInfo } = require('./server/services/sessionStore');
 
+const log = createLogger('server');
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// ── Middleware ──
 app.use(express.json({ limit: '5mb' }));
 
-// ── API Routes ──
 app.use('/api/plaud', plaudRoutes);
 app.use('/api/n8n', n8nRoutes);
 
-// ── Health check ──
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
-    uptime: process.uptime(),
-    session: getSessionInfo(),
-    n8n: { configured: !!process.env.N8N_WEBHOOK_URL },
+    uptime: Math.round(process.uptime()),
+    plaudMode: config.plaud.mode,
+    n8n: { configured: !!config.n8n.webhookUrl },
   });
 });
 
-// ── Static files ──
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── SPA fallback ──
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ── Start ──
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[paludem] Server running on port ${PORT}`);
+app.listen(config.port, '0.0.0.0', () => {
+  log.info(`Server running on port ${config.port} (mode: ${config.plaud.mode})`);
 });
