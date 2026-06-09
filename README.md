@@ -82,11 +82,54 @@ npm start
 | `PLAUD_CLI_MODE` | No | `global` | `global` or `npx` |
 | `PLAUD_CLI_BIN` | No | `plaud` | Binary name (global mode) |
 | `PLAUD_CLI_NPX_PACKAGE` | No | `@plaud-ai/cli@latest` | Package (npx mode) |
-| `PLAUD_HOME` | No | `~/.plaud` | PLAUD data directory |
+| `PLAUD_HOME` | No | `/app/.plaud` (Railway) or `~/.plaud` | PLAUD data directory |
 | `PLAUD_COMMAND_TIMEOUT_MS` | No | `60000` | CLI timeout (ms) |
+| `PLAUD_TOKENS_JSON` | No | — | Contents of `~/.plaud/tokens.json` for headless auth |
+| `PLAUD_AUTO_BOOTSTRAP_TOKENS` | No | `true` | Set `false` to disable token bootstrap |
 | `N8N_WEBHOOK_URL` | No | — | n8n webhook for AI pipeline |
 | `N8N_API_KEY` | No | — | n8n webhook auth key |
 | `CALLBACK_BASE_URL` | No | — | Public URL for n8n callbacks |
+
+### Token Bootstrap (headless auth for Railway)
+
+Railway containers cannot run `plaud login` (it requires a browser). Instead, authenticate locally and inject the tokens via environment variable.
+
+**Step 1 — Authenticate locally:**
+
+```bash
+npm install -g @plaud-ai/cli@latest
+plaud login          # Opens browser, completes OAuth
+plaud me             # Verify: should print your email
+```
+
+**Step 2 — Copy tokens:**
+
+```bash
+cat ~/.plaud/tokens.json
+# Copy the entire JSON output
+```
+
+**Step 3 — Configure Railway:**
+
+Add these environment variables in your Railway service settings:
+
+```env
+PLAUD_TOKENS_JSON={"access_token":"...","refresh_token":"...","expires_at":...}
+PLAUD_CLI_MODE=global
+```
+
+> **Security:** `PLAUD_TOKENS_JSON` is a secret. Add it as a Railway secret variable, never commit it to source control. The server never logs token content.
+
+At startup, the server writes `tokens.json` to `PLAUD_HOME` (auto-detected as `/app/.plaud` on Railway) before any CLI command runs. The `HOME` environment variable is aligned so the CLI finds the tokens at the correct path.
+
+**Step 4 — Verify:**
+
+After deploying, check the status endpoint:
+
+```bash
+curl https://your-app.railway.app/api/plaud/status
+# Should return: {"connected":true,"status":"authenticated","bootstrapped":true,...}
+```
 
 ### Railway with npx (no global install)
 
@@ -94,10 +137,14 @@ If your Railway plan doesn't persist global installs across deploys:
 
 ```env
 PLAUD_CLI_MODE=npx
-PLAUD_HOME=/app/.plaud
+PLAUD_TOKENS_JSON={"access_token":"...","refresh_token":"...","expires_at":...}
 ```
 
-The `PLAUD_HOME` directory stores authentication tokens. Mount a persistent volume at `/app/.plaud` to preserve login across deploys, or re-authenticate via `plaud login` after each deploy.
+The server auto-detects Railway and sets `PLAUD_HOME=/app/.plaud`. Token bootstrap works with both `global` and `npx` CLI modes.
+
+### Token Refresh
+
+If the status endpoint returns `not_authenticated` with `bootstrapped: true`, the tokens have likely expired. Re-run `plaud login` locally, copy the new `tokens.json`, and update `PLAUD_TOKENS_JSON` in Railway.
 
 ## API Endpoints
 
@@ -130,13 +177,13 @@ The `PLAUD_HOME` directory stores authentication tokens. Mount a persistent volu
 `GET /api/plaud/status` returns one of:
 
 ```json
-{"connected":false,"status":"cli_not_found","mode":"cli","cliMode":"global","reason":"..."}
+{"connected":false,"status":"cli_not_found","mode":"cli","cliMode":"global","bootstrapped":false,"reason":"..."}
 ```
 ```json
-{"connected":false,"status":"not_authenticated","mode":"cli","cliMode":"global","cliVersion":"1.0.0","reason":"..."}
+{"connected":false,"status":"not_authenticated","mode":"cli","cliMode":"global","cliVersion":"1.0.0","bootstrapped":true,"reason":"..."}
 ```
 ```json
-{"connected":true,"status":"authenticated","mode":"cli","cliMode":"global","cliVersion":"1.0.0","user":"user@example.com"}
+{"connected":true,"status":"authenticated","mode":"cli","cliMode":"global","cliVersion":"1.0.0","bootstrapped":true,"user":"user@example.com"}
 ```
 
 ## Architecture

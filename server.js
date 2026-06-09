@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const config = require('./server/config');
 const { createLogger } = require('./server/utils/logger');
+const { bootstrapPlaudTokens } = require('./server/services/plaud/plaudTokenBootstrap');
 const plaudRoutes = require('./server/routes/plaudRoutes');
 const n8nRoutes = require('./server/routes/n8nRoutes');
 
@@ -9,6 +10,17 @@ const log = createLogger('server');
 const app = express();
 
 app.use(express.json({ limit: '5mb' }));
+
+// Bootstrap PLAUD tokens from env before any CLI calls
+bootstrapPlaudTokens().then(result => {
+  if (result.bootstrapped) {
+    log.info('PLAUD token bootstrap complete');
+  } else if (config.plaud.tokensJson) {
+    log.warn(`PLAUD token bootstrap skipped: ${result.reason}`);
+  }
+}).catch(err => {
+  log.error(`PLAUD token bootstrap error: ${err.message}`);
+});
 
 app.use('/api/plaud', plaudRoutes);
 app.use('/api/n8n', n8nRoutes);

@@ -23,6 +23,8 @@ const Errors = {
   NO_TRANSCRIPT:              (detail) => new AppError('NO_TRANSCRIPT',               detail || 'No transcript available for this recording', 422),
   N8N_NOT_CONFIGURED:         (detail) => new AppError('N8N_NOT_CONFIGURED',          detail || 'n8n webhook URL not configured', 503),
   LEGACY_SESSION_MISSING:     (detail) => new AppError('LEGACY_SESSION_MISSING',      detail || 'No active legacy session. Connect first.', 401),
+  PLAUD_TOKENS_JSON_INVALID:  (detail) => new AppError('PLAUD_TOKENS_JSON_INVALID',   detail || 'PLAUD_TOKENS_JSON is not valid JSON', 500),
+  PLAUD_TOKENS_BOOTSTRAP_FAILED: (detail) => new AppError('PLAUD_TOKENS_BOOTSTRAP_FAILED', detail || 'Failed to write PLAUD tokens to disk', 500),
 };
 
 module.exports = { AppError, Errors };

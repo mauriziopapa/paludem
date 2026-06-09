@@ -31,6 +31,10 @@ function buildCliEnv(config) {
   const env = { ...process.env };
   if (config.plaud.home) {
     env.PLAUD_HOME = config.plaud.home;
+    const parent = require('path').dirname(config.plaud.home);
+    if (parent && parent !== '/' && parent !== '.') {
+      env.HOME = parent;
+    }
   }
   return env;
 }
